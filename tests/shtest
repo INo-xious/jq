@@ -1032,6 +1032,13 @@ if ! $msys && ! $mingw; then
     echo "strftime or strftimelocal are not pure functions"
     exit 1
   fi
+
+  # strftime/1 formats %s in UTC
+  if ! r=$(TZ=Asia/Tokyo $JQ -nc '[0, -0.5, 1425599507, (1425599507 | gmtime)] | map(strftime("%s %%s"))') \
+    || [ "$r" != '["0 %s","-1 %s","1425599507 %s","1425599507 %s"]' ]; then
+    echo "Incorrectly formatted seconds since the epoch"
+    exit 1
+  fi
 fi
 
 # Test ARG_NEWCLOSURE overflow protection (issue #3458)

@@ -1872,6 +1872,35 @@ static jv f_localtime(jq_state *jq, jv a) {
 #endif
 
 #ifdef HAVE_STRFTIME
+/*
+ * Expand %s to the seconds since the epoch of the UTC time tm. Some strftime()
+ * implementations (e.g. glibc) compute %s with mktime(), i.e. in local time.
+ */
+static jv expand_epoch_seconds(jv fmt, const struct tm *tm) {
+  const char *p = jv_string_value(fmt);
+  if (!strstr(p, "%s"))
+    return fmt;
+  struct tm tm2 = *tm;
+  time_t t = my_mktime(&tm2);
+  if (t == (time_t)-1 && tm2.tm_wday == -1)
+    return fmt;
+  jv ret = jv_string("");
+  const char *start = p;
+  for (; *p; p++) {
+    if (*p != '%' || p[1] == '\0')
+      continue;
+    if (p[1] == 's') {
+      ret = jv_string_append_buf(ret, start, p - start);
+      ret = jv_string_concat(ret, jv_string_fmt("%lld", (long long)t));
+      start = p + 2;
+    }
+    p++; // skip the conversion character, so that "%%s" is left as is
+  }
+  ret = jv_string_append_str(ret, start);
+  jv_free(fmt);
+  return ret;
+}
+
 static jv f_strftime(jq_state *jq, jv a, jv b) {
   if (jv_get_kind(a) == JV_KIND_NUMBER) {
     a = f_gmtime(jq, a);
@@ -1887,6 +1916,7 @@ static jv f_strftime(jq_state *jq, jv a, jv b) {
   struct tm tm;
   if (!jv2tm(a, &tm, 0))
     return ret_error(b, jv_string("strftime/1 requires parsed datetime inputs"));
+  b = expand_epoch_seconds(b, &tm);
 
   /* Prepend a character so that strftime() returning 0 means the result
    * did not fit, even if the format expands to nothing; it is trimmed below. */
